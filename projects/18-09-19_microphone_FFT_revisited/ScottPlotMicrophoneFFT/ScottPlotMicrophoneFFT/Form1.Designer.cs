@@ -128,7 +128,7 @@
             this.autoScaleToolStripMenuItem.Name = "autoScaleToolStripMenuItem";
             this.autoScaleToolStripMenuItem.Size = new System.Drawing.Size(132, 22);
             this.autoScaleToolStripMenuItem.Text = "Auto-Scale";
-            this.autoScaleToolStripMenuItem.Click += new System.EventHandler(this.autoScaleToolStripMenuItem_Click);
+            this.autoScaleToolStripMenuItem.Click += new System.EventHandler(this.AutoScaleToolStripMenuItem_Click);
             // 
             // helpToolStripMenuItem
             // 
@@ -144,14 +144,14 @@
             this.websiteToolStripMenuItem.Name = "websiteToolStripMenuItem";
             this.websiteToolStripMenuItem.Size = new System.Drawing.Size(144, 22);
             this.websiteToolStripMenuItem.Text = "Website";
-            this.websiteToolStripMenuItem.Click += new System.EventHandler(this.websiteToolStripMenuItem_Click);
+            this.websiteToolStripMenuItem.Click += new System.EventHandler(this.WebsiteToolStripMenuItem_Click);
             // 
             // infoMessageToolStripMenuItem
             // 
             this.infoMessageToolStripMenuItem.Name = "infoMessageToolStripMenuItem";
             this.infoMessageToolStripMenuItem.Size = new System.Drawing.Size(144, 22);
             this.infoMessageToolStripMenuItem.Text = "Info Message";
-            this.infoMessageToolStripMenuItem.Click += new System.EventHandler(this.infoMessageToolStripMenuItem_Click);
+            this.infoMessageToolStripMenuItem.Click += new System.EventHandler(this.InfoMessageToolStripMenuItem_Click);
             // 
             // Form1
             // 
@@ -164,7 +164,6 @@
             this.MainMenuStrip = this.menuStrip1;
             this.Name = "Form1";
             this.Text = "ScottPlot Microphone FFT Demo";
-            this.Load += new System.EventHandler(this.Form1_Load);
             this.tableLayoutPanel1.ResumeLayout(false);
             this.statusStrip1.ResumeLayout(false);
             this.statusStrip1.PerformLayout();

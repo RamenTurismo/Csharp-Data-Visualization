@@ -1,26 +1,35 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ScottPlot
 {
-
     public class Axis
     {
-        // user provides these
-        public double min { get; set; }
-        public double max { get; set; }
-        public int pxSize { get; private set; }
-        public bool inverted { get; set; }
+        public double Min { get; set; }
 
-        // these are calculated
-        public double unitsPerPx { get; private set; }
-        public double pxPerUnit { get; private set; }
-        public double span { get { return max - min; } }
-        public double center { get { return (max + min)/2.0; } }
-        
+        public double Max { get; set; }
+
+        public int PxSize { get; set; }
+
+        public bool Inverted { get; }
+
+        public double UnitsPerPx { get; private set; }
+
+        public double PxPerUnit { get; set; }
+
+        public double Span => Max - Min;
+
+        public double Center => (Max + Min) / 2.0;
+
+        /// <summary>
+        /// Pre-prepare recommended major and minor ticks
+        /// </summary>
+        public Tick[] TicksMajor { get; private set; }
+
+        public Tick[] TicksMinor { get; private set; }
+
+        private const double PixelsPerTick = 70;
+
         /// <summary>
         /// Single-dimensional axis (i.e., x-axis)
         /// </summary>
@@ -30,9 +39,9 @@ namespace ScottPlot
         /// <param name="inverted">inverted axis vs. pixel position (common for Y-axis)</param>
         public Axis(double min, double max, int sizePx = 500, bool inverted = false)
         {
-            this.min = min;
-            this.max = max;
-            this.inverted = inverted;
+            Min = min;
+            Max = max;
+            Inverted = inverted;
             Resize(sizePx);
         }
 
@@ -42,7 +51,7 @@ namespace ScottPlot
         /// <param name="sizePx">size of this axis (pixels)</param>
         public void Resize(int sizePx)
         {
-            this.pxSize = sizePx;
+            PxSize = sizePx;
             RecalculateScale();
         }
 
@@ -51,34 +60,23 @@ namespace ScottPlot
         /// </summary>
         public void RecalculateScale()
         {
-            this.pxPerUnit = (double)pxSize / (max - min);
-            this.unitsPerPx = (max - min) / (double)pxSize;
+            PxPerUnit = PxSize / (Max - Min);
+            UnitsPerPx = (Max - Min) / PxSize;
             RecalculateTicks();
         }
 
         /// <summary>
-        /// Shift the Axis by a specified amount
-        /// </summary>
-        /// <param name="Shift">distance (units)</param>
-        public void Pan(double Shift)
-        {
-            min += Shift;
-            max += Shift;
-            RecalculateScale();
-        }
-
-        /// <summary>
-        /// Zoom in on the center of Axis by a fraction. 
+        /// Zoom in on the center of Axis by a fraction.
         /// A fraction of 2 means that the new width will be 1/2 as wide as the old width.
         /// A fraction of 0.1 means the new width will show 10 times more axis length.
         /// </summary>
         /// <param name="zoomFrac">Fractional amount to zoom</param>
         public void Zoom(double zoomFrac)
         {
-            double newSpan = span / zoomFrac;
-            double newCenter = center;
-            min = newCenter - newSpan / 2;
-            max = newCenter + newSpan / 2;
+            double newSpan = Span / zoomFrac;
+            double newCenter = Center;
+            Min = newCenter - newSpan / 2;
+            Max = newCenter + newSpan / 2;
             RecalculateScale();
         }
 
@@ -90,116 +88,80 @@ namespace ScottPlot
         /// <returns></returns>
         public int GetPixel(double unit)
         {
-            int px = (int)((unit - min) * pxPerUnit);
-            if (inverted) px = pxSize - px;
+            var px = (int)((unit - Min) * PxPerUnit);
+            if (Inverted)
+            {
+                px = PxSize - px;
+            }
+
             return px;
         }
 
-        /// <summary>
-        /// Given a position on the screen (in pixels), return its location on the axis (in units).
-        /// </summary>
-        /// <param name="px">position (pixels)</param>
-        /// <returns></returns>
-        public double GetUnit(int px)
-        {
-            if (inverted) px = pxSize - px;
-            return min + (double)px * unitsPerPx;
-        }
-        
         /// <summary>
         /// Given an arbitrary number, return the nearerest round number
         /// (i.e., 1000, 500, 100, 50, 10, 5, 1, .5, .1, .05, .01)
         /// </summary>
         /// <param name="target">the number to approximate</param>
         /// <returns></returns>
-        private double RoundNumberNear(double target)
+        private static double RoundNumberNear(double target)
         {
             target = Math.Abs(target);
-            int lastDivision = 2;
+            var lastDivision = 2;
             double round = 1000000000000;
             while (round > 0.00000000001)
             {
-                if (round <= target) return round;
+                if (round <= target)
+                {
+                    return round;
+                }
+
                 round /= lastDivision;
-                if (lastDivision == 2) lastDivision = 5;
-                else lastDivision = 2;
+                lastDivision = lastDivision == 2 ? 5 : 2;
             }
+
             return 0;
         }
 
         /// <summary>
         /// Return an array of tick objects given a custom target tick count
         /// </summary>
-        public Tick[] GenerateTicks(int targetTickCount)
+        private Tick[] GenerateTicks(int targetTickCount)
         {
-            List<Tick> ticks = new List<Tick>();
-
-            if (targetTickCount > 0)
+            if (targetTickCount <= 0)
             {
-                double tickSize = RoundNumberNear(((max - min) / targetTickCount) * 1.5);
-                int lastTick = 123456789;
-                for (int i = 0; i < pxSize; i++)
+                return Array.Empty<Tick>();
+            }
+
+            var ticks = new List<Tick>();
+
+            double tickSize = RoundNumberNear((Max - Min) / targetTickCount * 1.5);
+            var lastTick = 123456789;
+            for (var i = 0; i < PxSize; i++)
+            {
+                double thisPosition = i * UnitsPerPx + Min;
+                var thisTick = (int)(thisPosition / tickSize);
+
+                if (thisTick == lastTick)
                 {
-                    double thisPosition = i * unitsPerPx + min;
-                    int thisTick = (int)(thisPosition / tickSize);
-                    if (thisTick != lastTick)
-                    {
-                        lastTick = thisTick;
-                        double thisPositionRounded = (double)((int)(thisPosition / tickSize) * tickSize);
-                        if (thisPositionRounded > min && thisPositionRounded < max)
-                        {
-                            ticks.Add(new Tick(thisPositionRounded, GetPixel(thisPositionRounded), max - min));
-                        }
-                    }
+                    continue;
+                }
+
+                lastTick = thisTick;
+                double thisPositionRounded = (int)(thisPosition / tickSize) * tickSize;
+                if (thisPositionRounded > Min && thisPositionRounded < Max)
+                {
+                    ticks.Add(new Tick(thisPositionRounded, GetPixel(thisPositionRounded), Max - Min));
                 }
             }
+
             return ticks.ToArray();
         }
-        
-        /// <summary>
-        /// Pre-prepare recommended major and minor ticks
-        /// </summary>
-        public Tick[] ticksMajor;
-        public Tick[] ticksMinor;
-        public double pixelsPerTick = 70;
+
         private void RecalculateTicks()
         {
-            double tick_density_x = pxSize / pixelsPerTick; // approx. 1 tick per this many pixels
-            ticksMajor = GenerateTicks((int)(tick_density_x * 5)); // relative density of minor to major ticks
-            ticksMinor = GenerateTicks((int)(tick_density_x * 1));
+            double tickDensityX = PxSize / PixelsPerTick; // approx. 1 tick per this many pixels
+            TicksMajor = GenerateTicks((int)(tickDensityX * 5)); // relative density of minor to major ticks
+            TicksMinor = GenerateTicks((int)(tickDensityX * 1));
         }
-
-        /// <summary>
-        /// The Tick object stores details about a single tick and can generate relevant labels.
-        /// </summary>
-        public class Tick
-        {
-            public double posUnit { get; set; }
-            public int posPixel { get; set; }
-            public double spanUnits { get; set; }
-
-            public Tick(double value, int pixel, double axisSpan)
-            {
-                this.posUnit = value;
-                this.posPixel = pixel;
-                this.spanUnits = axisSpan;
-            }
-
-            public string label
-            {
-                get
-                {
-                    if (spanUnits < .01) return string.Format("{0:0.0000}", posUnit);
-                    if (spanUnits < .1) return string.Format("{0:0.000}", posUnit);
-                    if (spanUnits < 1) return string.Format("{0:0.00}", posUnit);
-                    if (spanUnits < 10) return string.Format("{0:0.0}", posUnit);
-                    return string.Format("{0:0}", posUnit);
-                }
-            }
-        }
-
     }
-
-
-
 }

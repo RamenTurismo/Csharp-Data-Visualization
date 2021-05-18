@@ -1,27 +1,22 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-
+﻿using Accord.Math;
 using NAudio.Wave;
-using NAudio.CoreAudioApi;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Numerics;
+using System.Windows.Forms;
 
 namespace ScottPlotMicrophoneFFT
 {
     public partial class Form1 : Form
     {
-
-        // MICROPHONE ANALYSIS SETTINGS
-        private int RATE = 44100; // sample rate of the sound card
-        private int BUFFERSIZE = (int)Math.Pow(2, 11); // must be a multiple of 2
-
-        // prepare class objects
-        public BufferedWaveProvider bwp;
+        private const int Rate = 44100; // sample rate of the sound card
+        private static readonly int Buffersize = (int)Math.Pow(2, 11); // must be a multiple of 2
+        private static readonly int BufferMiliseconds = (int)(Buffersize / (double)Rate * 1000d);
+        private BufferedWaveProvider bwp;
+        private int numberOfDraws;
+        private bool needsAutoScaling = true;
 
         public Form1()
         {
@@ -31,45 +26,48 @@ namespace ScottPlotMicrophoneFFT
             timerReplot.Enabled = true;
         }
 
-        void AudioDataAvailable(object sender, WaveInEventArgs e)
+        private void AudioDataAvailable(object sender, WaveInEventArgs e)
         {
             bwp.AddSamples(e.Buffer, 0, e.BytesRecorded);
         }
 
-        private void Form1_Load(object sender, EventArgs e)
+        private void SetupGraphLabels()
         {
-        }
-
-        public void SetupGraphLabels()
-        {
-            scottPlotUC1.fig.labelTitle = "Microphone PCM Data";
-            scottPlotUC1.fig.labelY = "Amplitude (PCM)";
-            scottPlotUC1.fig.labelX = "Time (ms)";
+            scottPlotUC1.Fig.labelTitle = "Microphone PCM Data";
+            scottPlotUC1.Fig.labelY = "Amplitude (PCM)";
+            scottPlotUC1.Fig.labelX = "Time (ms)";
             scottPlotUC1.Redraw();
 
-            scottPlotUC2.fig.labelTitle = "Microphone FFT Data";
-            scottPlotUC2.fig.labelY = "Power (raw)";
-            scottPlotUC2.fig.labelX = "Frequency (Hz)";
+            scottPlotUC2.Fig.labelTitle = "Microphone FFT Data";
+            scottPlotUC2.Fig.labelY = "Power (raw)";
+            scottPlotUC2.Fig.labelX = "Frequency (Hz)";
             scottPlotUC2.Redraw();
         }
 
-        public void StartListeningToMicrophone(int audioDeviceNumber = 0)
+        private void StartListeningToMicrophone(int audioDeviceNumber = 0)
         {
-            WaveIn wi = new WaveIn();
-            wi.DeviceNumber = audioDeviceNumber;
-            wi.WaveFormat = new NAudio.Wave.WaveFormat(RATE, 1);
-            wi.BufferMilliseconds = (int)((double)BUFFERSIZE / (double)RATE * 1000.0);
-            wi.DataAvailable += new EventHandler<WaveInEventArgs>(AudioDataAvailable);
-            bwp = new BufferedWaveProvider(wi.WaveFormat);
-            bwp.BufferLength = BUFFERSIZE * 2;
-            bwp.DiscardOnBufferOverflow = true;
+            var wi = new WaveIn
+            {
+                DeviceNumber = audioDeviceNumber,
+                WaveFormat = new WaveFormat(Rate, 1),
+                BufferMilliseconds = BufferMiliseconds
+            };
+
+            wi.DataAvailable += AudioDataAvailable;
+
+            bwp = new BufferedWaveProvider(wi.WaveFormat)
+            {
+                BufferLength = Buffersize * 2,
+                DiscardOnBufferOverflow = true
+            };
+
             try
             {
                 wi.StartRecording();
             }
             catch
             {
-                string msg = "Could not record from audio device!\n\n";
+                var msg = "Could not record from audio device!\n\n";
                 msg += "Is your microphone plugged in?\n";
                 msg += "Is it set as your default recording device?";
                 MessageBox.Show(msg, "ERROR");
@@ -84,53 +82,55 @@ namespace ScottPlotMicrophoneFFT
             timerReplot.Enabled = true;
         }
 
-        public int numberOfDraws = 0;
-        public bool needsAutoScaling = true;
-        public void PlotLatestData()
+        private void PlotLatestData()
         {
             // check the incoming microphone audio
-            int frameSize = BUFFERSIZE;
+            int frameSize = Buffersize;
             var audioBytes = new byte[frameSize];
             bwp.Read(audioBytes, 0, frameSize);
 
             // return if there's nothing new to plot
             if (audioBytes.Length == 0)
+            {
                 return;
+            }
+
             if (audioBytes[frameSize - 2] == 0)
+            {
                 return;
+            }
 
             // incoming data is 16-bit (2 bytes per audio point)
-            int BYTES_PER_POINT = 2;
+            const int bytesPerPoint = 2;
 
             // create a (32-bit) int array ready to fill with the 16-bit data
-            int graphPointCount = audioBytes.Length / BYTES_PER_POINT;
+            int graphPointCount = audioBytes.Length / bytesPerPoint;
 
             // create double arrays to hold the data we will graph
-            double[] pcm = new double[graphPointCount];
-            double[] fft = new double[graphPointCount];
-            double[] fftReal = new double[graphPointCount/2];
-            
+            var pcm = new double[graphPointCount];
+            var fftReal = new double[graphPointCount / 2];
+
             // populate Xs and Ys with double data
-            for (int i = 0; i < graphPointCount; i++)
+            for (var i = 0; i < graphPointCount; i++)
             {
                 // read the int16 from the two bytes
-                Int16 val = BitConverter.ToInt16(audioBytes, i * 2);
+                var val = BitConverter.ToInt16(audioBytes, i * 2);
 
                 // store the value in Ys as a percent (+/- 100% = 200%)
-                pcm[i] = (double)(val) / Math.Pow(2,16) * 200.0;
+                pcm[i] = val / Math.Pow(2, 16) * 200.0;
             }
 
             // calculate the full FFT
-            fft = FFT(pcm);
+            double[] fft = Fft(pcm);
 
             // determine horizontal axis units for graphs
-            double pcmPointSpacingMs = RATE / 1000;
-            double fftMaxFreq = RATE / 2;
+            const double pcmPointSpacingMs = Rate / 1000d;
+            const double fftMaxFreq = Rate / 2d;
             double fftPointSpacingHz = fftMaxFreq / graphPointCount;
 
             // just keep the real half (the other half imaginary)
             Array.Copy(fft, fftReal, fftReal.Length);
-            
+
             // plot the Xs and Ys for both graphs
             scottPlotUC1.Clear();
             scottPlotUC1.PlotSignal(pcm, pcmPointSpacingMs, Color.Blue);
@@ -151,18 +151,17 @@ namespace ScottPlotMicrophoneFFT
             lblStatus.Text = $"Analyzed and graphed PCM and FFT data {numberOfDraws} times";
 
             // this reduces flicker and helps keep the program responsive
-            Application.DoEvents(); 
-
+            Application.DoEvents();
         }
 
-        private void autoScaleToolStripMenuItem_Click(object sender, EventArgs e)
+        private void AutoScaleToolStripMenuItem_Click(object sender, EventArgs e)
         {
             needsAutoScaling = true;
         }
 
-        private void infoMessageToolStripMenuItem_Click(object sender, EventArgs e)
+        private void InfoMessageToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            string msg = "";
+            var msg = "";
             msg += "left-click-drag to pan\n";
             msg += "right-click-drag to zoom\n";
             msg += "middle-click to auto-axis\n";
@@ -170,20 +169,26 @@ namespace ScottPlotMicrophoneFFT
             MessageBox.Show(msg);
         }
 
-        private void websiteToolStripMenuItem_Click(object sender, EventArgs e)
+        private void WebsiteToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            System.Diagnostics.Process.Start("https://github.com/swharden/Csharp-Data-Visualization");
+            Process.Start("https://github.com/swharden/Csharp-Data-Visualization");
         }
 
-        public double[] FFT(double[] data)
+        private static double[] Fft(IReadOnlyList<double> data)
         {
-            double[] fft = new double[data.Length];
-            System.Numerics.Complex[] fftComplex = new System.Numerics.Complex[data.Length];
-            for (int i = 0; i < data.Length; i++)
-                fftComplex[i] = new System.Numerics.Complex(data[i], 0.0);
-            Accord.Math.FourierTransform.FFT(fftComplex, Accord.Math.FourierTransform.Direction.Forward);
-            for (int i = 0; i < data.Length; i++)
+            var fft = new double[data.Count];
+            var fftComplex = new Complex[data.Count];
+            for (var i = 0; i < data.Count; i++)
+            {
+                fftComplex[i] = new Complex(data[i], 0.0);
+            }
+
+            FourierTransform.FFT(fftComplex, FourierTransform.Direction.Forward);
+            for (var i = 0; i < data.Count; i++)
+            {
                 fft[i] = fftComplex[i].Magnitude;
+            }
+
             return fft;
         }
     }
